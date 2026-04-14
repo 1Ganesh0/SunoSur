@@ -27,6 +27,10 @@ SunoSur is a web-based music streaming application that allows users to search a
 3. Run:
    streamlit run app.py
 
+(OR)
+
+   Click the link provided in Live Demo
+
 
 ##  Deployment
 
