@@ -14,11 +14,6 @@ st.set_page_config(page_title="SunoSur", layout="wide")
 st.markdown("""
 <style>
 body { background-color: #0b0b0c; color: white; }
-.stTextInput > div > div > input {
-    background-color: #1c1c1e;
-    color: white;
-    border-radius: 10px;
-}
 .stButton>button {
     background-color: #ff2d55;
     color: white;
@@ -45,11 +40,8 @@ if "current_video" not in st.session_state:
 if "queue" not in st.session_state:
     st.session_state.queue = []
 
-if "playlist" not in st.session_state:
-    st.session_state.playlist = []
-
 # ------------------------
-# SEARCH FUNCTION
+# YOUTUBE SEARCH
 # ------------------------
 def search_youtube(query):
     url = "https://www.googleapis.com/youtube/v3/search"
@@ -57,7 +49,7 @@ def search_youtube(query):
         "part": "snippet",
         "q": query,
         "key": API_KEY,
-        "maxResults": 9,
+        "maxResults": 5,
         "type": "video"
     }
 
@@ -74,10 +66,44 @@ def search_youtube(query):
     return results
 
 # ------------------------
+# SMART RADIO FUNCTION
+# ------------------------
+def generate_radio(song_title):
+    words = song_title.split()
+
+    # take first 2–3 meaningful words
+    base = " ".join(words[:3])
+
+    queries = [
+        base,
+        base + " songs",
+        base + " playlist",
+        base + " similar songs"
+    ]
+
+    radio_results = []
+
+    for q in queries:
+        res = search_youtube(q)
+        radio_results.extend(res)
+
+    # remove duplicates
+    seen = set()
+    unique = []
+    for r in radio_results:
+        if r["video_id"] not in seen:
+            unique.append(r)
+            seen.add(r["video_id"])
+
+    return unique[:8]   # limit queue size
+
+# ------------------------
 # SIDEBAR
 # ------------------------
 st.sidebar.title("🎵 SunoSur")
-page = st.sidebar.radio("Navigate", ["Home", "Search", "Queue", "Playlist"])
+page = st.sidebar.radio("Navigate", ["Search", "Queue"])
+
+radio_mode = st.sidebar.toggle("🎧 Radio Mode")
 
 # ------------------------
 # PLAYER
@@ -86,70 +112,40 @@ if st.session_state.current_video:
     st.markdown("### ▶ Now Playing")
     st.video(f"https://www.youtube.com/watch?v={st.session_state.current_video}")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("⏭ Next"):
-            if st.session_state.queue:
-                next_song = st.session_state.queue.pop(0)
-                st.session_state.current_video = next_song["video_id"]
-                st.rerun()
+    if st.button("⏭ Next"):
+        if st.session_state.queue:
+            next_song = st.session_state.queue.pop(0)
+            st.session_state.current_video = next_song["video_id"]
+            st.rerun()
 
     st.markdown("---")
 
 # ------------------------
-# HOME
-# ------------------------
-if page == "Home":
-    st.title("🏠 Home")
-
-    mood = st.text_input("🎭 Mood (chill, gym, sad, focus)")
-
-    if mood:
-        results = search_youtube(mood + " music")
-
-        cols = st.columns(3)
-
-        for i, video in enumerate(results):
-            with cols[i % 3]:
-                st.image(video["thumbnail"], width="stretch")
-                st.markdown(f"**{video['title']}**")
-
-                if st.button("▶ Play", key=f"home_play_{video['video_id']}"):
-                    st.session_state.current_video = video["video_id"]
-
-                if st.button("➕ Queue", key=f"home_queue_{video['video_id']}"):
-                    st.session_state.queue.append(video)
-
-                if st.button("💾 Save", key=f"home_save_{video['video_id']}"):
-                    st.session_state.playlist.append(video)
-
-# ------------------------
-# SEARCH
+# SEARCH PAGE
 # ------------------------
 if page == "Search":
-    st.title("🔍 Search")
+    st.title("🔍 Search Songs")
 
-    query = st.text_input("Search songs")
+    query = st.text_input("Search")
 
     if query:
         results = search_youtube(query)
 
-        cols = st.columns(3)
+        for video in results:
+            st.image(video["thumbnail"])
+            st.write(video["title"])
 
-        for i, video in enumerate(results):
-            with cols[i % 3]:
-                st.image(video["thumbnail"], width="stretch")
-                st.markdown(f"**{video['title']}**")
+            if st.button("▶ Play", key=video["video_id"]):
+                st.session_state.current_video = video["video_id"]
 
-                if st.button("▶ Play", key=f"search_play_{video['video_id']}"):
-                    st.session_state.current_video = video["video_id"]
+                # 🎧 RADIO LOGIC
+                if radio_mode:
+                    st.session_state.queue.clear()
+                    radio_songs = generate_radio(video["title"])
+                    st.session_state.queue.extend(radio_songs)
 
-                if st.button("➕ Queue", key=f"search_queue_{video['video_id']}"):
-                    st.session_state.queue.append(video)
-
-                if st.button("💾 Save", key=f"search_save_{video['video_id']}"):
-                    st.session_state.playlist.append(video)
+            if st.button("➕ Queue", key=f"q_{video['video_id']}"):
+                st.session_state.queue.append(video)
 
 # ------------------------
 # QUEUE PAGE
@@ -161,36 +157,8 @@ if page == "Queue":
         st.write("Queue is empty")
     else:
         for i, song in enumerate(st.session_state.queue):
-            col1, col2 = st.columns([5,1])
+            st.write(song["title"])
 
-            with col1:
-                st.write(song["title"])
-
-            with col2:
-                if st.button("❌", key=f"remove_q_{i}"):
-                    st.session_state.queue.pop(i)
-                    st.rerun()
-
-# ------------------------
-# PLAYLIST PAGE
-# ------------------------
-if page == "Playlist":
-    st.title("📁 Your Playlist")
-
-    if not st.session_state.playlist:
-        st.write("No songs saved yet")
-    else:
-        for i, song in enumerate(st.session_state.playlist):
-            col1, col2, col3 = st.columns([5,1,1])
-
-            with col1:
-                st.write(song["title"])
-
-            with col2:
-                if st.button("▶", key=f"plist_play_{i}"):
-                    st.session_state.current_video = song["video_id"]
-
-            with col3:
-                if st.button("❌", key=f"plist_remove_{i}"):
-                    st.session_state.playlist.pop(i)
-                    st.rerun()
+            if st.button("❌", key=f"remove_{i}"):
+                st.session_state.queue.pop(i)
+                st.rerun()
